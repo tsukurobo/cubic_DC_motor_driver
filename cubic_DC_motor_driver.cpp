@@ -4,16 +4,18 @@
 #include "hardware/pwm.h"
 #include "hardware/gpio.h"
 #include "hardware/adc.h"
+#include "iostream"
+#include "bitset"
 
 #include <map>
 #include <cstdlib>  // abs() for integer
 using namespace std;
 
 #define SPI_PORT spi0
-#define PIN_SIMO 0
+#define PIN_MOSI 0
 #define PIN_SS   1
 #define PIN_SCLK 2
-#define PIN_SOMI 3
+#define PIN_MISO 3
 #define SPI_FREQ 400000
 
 // (wrap + 1) x clkdiv = (クロック周波数) / (PWM周波数)
@@ -30,7 +32,7 @@ using namespace std;
 #define MOTOR_NUM 8
 #define SOL_SUB_NUM 4 // ソレノイドとサブチャンネルDCモータの数
 
-#define DELAY 1 //制御分解能(ms)
+#define DELAY 100 //制御分解能(us)
 
 class DC_motor {
 private:
@@ -38,7 +40,7 @@ private:
     const uint8_t PIN_PWM;
     uint8_t slice;
     bool chan;
-    int duty_prev = 0;
+    int16_t duty_prev = 0;
 public:
     DC_motor(uint8_t PIN_PWM, uint8_t PIN_DIRE);
     void drive(int16_t duty, float volt, bool ifPrint = false);
@@ -192,57 +194,12 @@ Solenoid solenoid[] = {
     { 7,  6}
 };
 
-//SPI通信の情報を受け取るバッファ
-uint8_t buf[MOTOR_NUM*2+SOL_SUB_NUM*2];
-
-void spi_receive(uint gpio, uint32_t events) {
-    if (gpio == PIN_SS && events == GPIO_IRQ_EDGE_FALL) {
-        gpio_set_irq_enabled(PIN_SS, GPIO_IRQ_EDGE_FALL, false);
-
-        gpio_set_function(PIN_SOMI, GPIO_FUNC_SPI);
-        gpio_set_function(PIN_SS,   GPIO_FUNC_SPI);
-
-        spi_read_blocking(SPI_PORT, 0, buf, MOTOR_NUM*2+SOL_SUB_NUM*2);
-
-        gpio_init(PIN_SOMI);
-        gpio_set_dir(PIN_SOMI, GPIO_IN);
-        gpio_init(PIN_SS);
-        gpio_set_dir(PIN_SS, GPIO_IN);
-        gpio_pull_up(PIN_SS);
-
-        gpio_set_irq_enabled(PIN_SS, GPIO_IRQ_EDGE_FALL, true);
-    }
-}
-
 int main()
-{   
-    // SPIピンをアクティブにする
-    /*
-        スレーブ動作の際にSSがHIGHのときもMISOがLOWになってしまうSPIライブラリのバグがあるため，
-        MISOとSSをGPIOピンとして初期化し，SSの立ち下がりエッジで割り込み処理をしSPI通信を行う
-    */
-    gpio_set_function(PIN_SIMO, GPIO_FUNC_SPI);
-    //gpio_set_function(PIN_SS,   GPIO_FUNC_SPI);
-    gpio_set_function(PIN_SCLK, GPIO_FUNC_SPI);
-    //gpio_set_function(PIN_SOMI, GPIO_FUNC_SPI);
-    gpio_init(PIN_SS);
-    gpio_set_dir(PIN_SS, GPIO_IN);
-    gpio_pull_up(PIN_SS);
-    gpio_init(PIN_SOMI);
-    gpio_set_dir(PIN_SOMI, GPIO_IN);
-
-    // SPI初期化(周波数を4MHzに設定)
-    spi_init(SPI_PORT, SPI_FREQ);
-    spi_set_format(SPI_PORT, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
-    // スレーブでSPI通信開始
-    spi_set_slave(SPI_PORT, true);
-
-    gpio_set_irq_enabled_with_callback(PIN_SS, GPIO_IRQ_EDGE_FALL, true, spi_receive);
-
+{
     // コンデンサーの充電を待つ
     ///*
     sleep_ms(1000);
-
+    
     // モータを回るように調整?
     gpio_init(28);
     gpio_set_dir(28, GPIO_OUT);
@@ -250,14 +207,42 @@ int main()
 
     // シリアル通信初期化
     stdio_init_all();
+    
+    // SPI初期化(周波数を4MHzに設定)
+    spi_init(SPI_PORT, SPI_FREQ);
+    // スレーブでSPI通信開始
+    spi_set_slave(SPI_PORT, true);
+    // SPIピンをアクティブにする
+    gpio_set_function(PIN_MOSI, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_SS,   GPIO_FUNC_SPI);
+    gpio_set_function(PIN_SCLK, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_MISO, GPIO_FUNC_SPI);
+
+    spi_set_format(SPI_PORT, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
 
     // adc初期化
     adc_init();
-    
+    uint8_t buf[MOTOR_NUM*2+SOL_SUB_NUM*2]; //SPI通信の情報を受け取るバッファ
+    const uint8_t request_buf = 0xFF; // マスターへの送信要求バッファ "11111111"
+
+    int16_t duty[MOTOR_NUM];
+    int16_t sol_sub[SOL_SUB_NUM];
+
     while(true) {
         Vr1.read(false);
 
-        int16_t duty[MOTOR_NUM];
+        spi_write_blocking(SPI_PORT, &request_buf, 1); // リクエスト送信
+            
+        /*
+            for(int i=0;i<8;i++){
+                std::cout << std::bitset<16>(duty[i]) << ",";
+            }
+            for(int i=0;i<4;i++){
+                std::cout << std::bitset<16>(sol_sub[i]) << ",";
+            }
+            std::cout << "\n";
+            // std::cout << std::bitset<16>(duty[0]) << ":" << std::bitset<8>(buf[1]) << "," << std::bitset<8>(buf[0]) << "\n";
+        */
 
         for (int i = 0; i < MOTOR_NUM; i++) {
             duty[i] = buf[2*i+1];
@@ -267,7 +252,7 @@ int main()
             motors[i].drive(duty[i], Vr1.volt, false);
         }
 
-        int16_t sol_sub[SOL_SUB_NUM];
+        
         for (int i = 0; i < SOL_SUB_NUM; i++) {
             sol_sub[i] = buf[2*(i+MOTOR_NUM)+1];
             sol_sub[i] = sol_sub[i] << 8;
@@ -283,7 +268,7 @@ int main()
             }
         }
 
-        sleep_ms(DELAY);
+        sleep_us(DELAY);
     }
 
     return 0;
