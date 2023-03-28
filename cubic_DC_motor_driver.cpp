@@ -199,11 +199,6 @@ int main()
     // コンデンサーの充電を待つ
     ///*
     sleep_ms(1000);
-    
-    // モータを回るように調整?
-    gpio_init(28);
-    gpio_set_dir(28, GPIO_OUT);
-    gpio_put(28, 1);
 
     // シリアル通信初期化
     stdio_init_all();
@@ -243,6 +238,8 @@ int main()
             std::cout << "\n";
             // std::cout << std::bitset<16>(duty[0]) << ":" << std::bitset<8>(buf[1]) << "," << std::bitset<8>(buf[0]) << "\n";
         */
+
+        spi_read_blocking(SPI_PORT, 0, buf, MOTOR_NUM*2+SOL_SUB_NUM*2); // データ受信
 
         for (int i = 0; i < MOTOR_NUM; i++) {
             duty[i] = buf[2*i+1];
