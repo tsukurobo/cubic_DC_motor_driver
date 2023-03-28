@@ -4,17 +4,19 @@
 #include "hardware/pwm.h"
 #include "hardware/gpio.h"
 #include "hardware/adc.h"
+#include "iostream"
+#include "bitset"
 
 #include <map>
 #include <cstdlib>  // abs() for integer
 using namespace std;
 
 #define SPI_PORT spi0
-#define PIN_SIMO 0
+#define PIN_MOSI 0
 #define PIN_SS   1
 #define PIN_SCLK 2
-#define PIN_SOMI 3
-#define SPI_FREQ 400000
+#define PIN_MISO 3
+#define SPI_FREQ 4000000
 
 // (wrap + 1) x clkdiv = (クロック周波数) / (PWM周波数)
 // クロック周波数は125MHz
@@ -27,10 +29,10 @@ using namespace std;
 
 #define SOLENOID_TIME 10000 // ソレノイドのON時間(us)
 
-#define MOTOR_NUM 8
+#define MAINMOTOR_NUM 8
 #define SOL_SUB_NUM 4 // ソレノイドとサブチャンネルDCモータの数
 
-#define DELAY 1 //制御分解能(ms)
+#define DELAY 1 //制御分解能(us)
 
 class DC_motor {
 private:
@@ -38,7 +40,7 @@ private:
     const uint8_t PIN_PWM;
     uint8_t slice;
     bool chan;
-    int duty_prev = 0;
+    int16_t duty_prev = 0;
 public:
     DC_motor(uint8_t PIN_PWM, uint8_t PIN_DIRE);
     void drive(int16_t duty, float volt, bool ifPrint = false);
@@ -89,6 +91,82 @@ DC_motor motors[] = {
     { 9,  4},
     { 8,  5}
 };
+
+class SUB_motor{
+private:
+    const uint8_t PIN_A;
+    const uint8_t PIN_B;
+    uint8_t slice;
+    bool chan_A;
+    bool chan_B;
+    bool chan_pwm;
+    int16_t duty_prev = 0;
+
+public:
+    SUB_motor(uint8_t PIN_A, uint8_t PIN_B); // コンストラクタ
+    void drive(int16_t duty, float volt, bool ifPrint = false);
+};
+
+SUB_motor::SUB_motor(uint8_t PIN_A, uint8_t PIN_B)
+    : PIN_A(PIN_A), PIN_B(PIN_B)
+{
+    gpio_set_function(PIN_A, GPIO_FUNC_PWM);
+    gpio_set_function(PIN_B, GPIO_FUNC_PWM);
+    chan_A = PIN_A % 2;
+    chan_B = PIN_B % 2;
+
+    slice = pwm_gpio_to_slice_num(PIN_A);
+    pwm_set_wrap(slice, WRAP_DC);
+    pwm_set_clkdiv(slice, CLKDIV_DC);
+    pwm_set_enabled(slice, true);
+    pwm_set_chan_level(slice, chan_A, WRAP_DC + 1);
+    pwm_set_chan_level(slice, chan_B, WRAP_DC + 1);
+}
+
+void SUB_motor::drive(int16_t duty, float volt, bool ifPrint){
+    // 前回のDutyと同じなら何もしない
+    if (duty == duty_prev)
+        return;
+    // 前回のDutyとの差が大きい場合は、差がDUTY_DIFF_MAX以下になるように調整
+    if (abs(duty - duty_prev) > DUTY_DIFF_MAX)
+    {
+        duty = duty_prev + (duty < duty_prev ? -1 : 1) * DUTY_DIFF_MAX;
+    }
+    // サブチャンネルはHIGHがデフォルト（HIGHの時に静止）なので，duty比は最大値1から指定した値を引いたものとする
+    int level = (WRAP_DC + 1.0) * (1.0 - (double)abs(duty) / DUTY_MAX) * V_MIN / volt;
+
+    // dutyの正負が逆転していたらHIGHを与えるピンを変更
+    // bool chan_pwm;
+    if (duty * duty_prev <= 0)
+    {
+        if (duty > 0) // BがHIGHでモーター向かってCW
+        {
+            chan_pwm = chan_A;
+            pwm_set_chan_level(slice, chan_B, WRAP_DC + 1); // chan_BをHIGH
+        }
+        else if (duty < 0)
+        {
+            chan_pwm = chan_B;
+            pwm_set_chan_level(slice, chan_A, WRAP_DC + 1); // chan_AをHIGH
+        }
+        //printf("chan_pwm = %d, chan_A = %d, chan_B = %d\n", chan_pwm, chan_A, chan_B);
+    }
+    pwm_set_chan_level(slice, chan_pwm, level);
+
+    if (ifPrint)
+        printf("duty_prev:%d, duty:%d, level:%d, Vr1:%f\n", duty_prev, duty, level, volt / 36.3 * 4095.0);
+
+    duty_prev = duty;
+}
+
+///*
+SUB_motor SUBmotors[] = {
+    {26, 27},
+    {19, 18},
+    {13, 12},
+    {7, 6}
+};
+//*/
 
 
 class ADC {
@@ -192,98 +270,75 @@ Solenoid solenoid[] = {
     { 7,  6}
 };
 
-//SPI通信の情報を受け取るバッファ
-uint8_t buf[MOTOR_NUM*2+SOL_SUB_NUM*2];
-
-void spi_receive(uint gpio, uint32_t events) {
-    if (gpio == PIN_SS && events == GPIO_IRQ_EDGE_FALL) {
-        gpio_set_irq_enabled(PIN_SS, GPIO_IRQ_EDGE_FALL, false);
-
-        gpio_set_function(PIN_SOMI, GPIO_FUNC_SPI);
-        gpio_set_function(PIN_SS,   GPIO_FUNC_SPI);
-
-        spi_read_blocking(SPI_PORT, 0, buf, MOTOR_NUM*2+SOL_SUB_NUM*2);
-
-        gpio_init(PIN_SOMI);
-        gpio_set_dir(PIN_SOMI, GPIO_IN);
-        gpio_init(PIN_SS);
-        gpio_set_dir(PIN_SS, GPIO_IN);
-        gpio_pull_up(PIN_SS);
-
-        gpio_set_irq_enabled(PIN_SS, GPIO_IRQ_EDGE_FALL, true);
-    }
-}
-
 int main()
-{   
-    // SPIピンをアクティブにする
-    /*
-        スレーブ動作の際にSSがHIGHのときもMISOがLOWになってしまうSPIライブラリのバグがあるため，
-        MISOとSSをGPIOピンとして初期化し，SSの立ち下がりエッジで割り込み処理をしSPI通信を行う
-    */
-    gpio_set_function(PIN_SIMO, GPIO_FUNC_SPI);
-    //gpio_set_function(PIN_SS,   GPIO_FUNC_SPI);
-    gpio_set_function(PIN_SCLK, GPIO_FUNC_SPI);
-    //gpio_set_function(PIN_SOMI, GPIO_FUNC_SPI);
-    gpio_init(PIN_SS);
-    gpio_set_dir(PIN_SS, GPIO_IN);
-    gpio_pull_up(PIN_SS);
-    gpio_init(PIN_SOMI);
-    gpio_set_dir(PIN_SOMI, GPIO_IN);
-
-    // SPI初期化(周波数を4MHzに設定)
-    spi_init(SPI_PORT, SPI_FREQ);
-    spi_set_format(SPI_PORT, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
-    // スレーブでSPI通信開始
-    spi_set_slave(SPI_PORT, true);
-
-    gpio_set_irq_enabled_with_callback(PIN_SS, GPIO_IRQ_EDGE_FALL, true, spi_receive);
-
+{
     // コンデンサーの充電を待つ
     ///*
     sleep_ms(1000);
 
-    // モータを回るように調整?
-    gpio_init(28);
-    gpio_set_dir(28, GPIO_OUT);
-    gpio_put(28, 1);
-
     // シリアル通信初期化
     stdio_init_all();
+    
+    // SPI初期化(周波数を4MHzに設定)
+    spi_init(SPI_PORT, SPI_FREQ);
+    // スレーブでSPI通信開始
+    spi_set_slave(SPI_PORT, true);
+    // SPIピンをアクティブにする
+    gpio_set_function(PIN_MOSI, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_SS,   GPIO_FUNC_SPI);
+    gpio_set_function(PIN_SCLK, GPIO_FUNC_SPI);
+    gpio_set_function(PIN_MISO, GPIO_FUNC_SPI);
+
+    spi_set_format(SPI_PORT, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
 
     // adc初期化
     adc_init();
-    
+    const int motor_num = MAINMOTOR_NUM + SOL_SUB_NUM;
+    uint8_t buf[motor_num*2]; //SPI通信の情報を受け取るバッファ
+    const uint8_t request_buf = 0xFF; // マスターへの送信要求バッファ "11111111"
+
+    int16_t duty[motor_num];
+
     while(true) {
         Vr1.read(false);
 
-        int16_t duty[MOTOR_NUM];
+        spi_write_blocking(SPI_PORT, &request_buf, 1); // リクエスト送信
+            
+        /*
+            for(int i=0;i<8;i++){
+                std::cout << std::bitset<16>(duty[i]) << ",";
+            }
+            for(int i=0;i<4;i++){
+                std::cout << std::bitset<16>(sol_sub[i]) << ",";
+            }
+            std::cout << "\n";
+            // std::cout << std::bitset<16>(duty[0]) << ":" << std::bitset<8>(buf[1]) << "," << std::bitset<8>(buf[0]) << "\n";
+        */
 
-        for (int i = 0; i < MOTOR_NUM; i++) {
+        spi_read_blocking(SPI_PORT, 0, buf, motor_num * 2); // データ受信
+
+        for (int i = 0; i < motor_num; i++) {
             duty[i] = buf[2*i+1];
             duty[i] = duty[i] << 8;
             duty[i] |= buf[2*i];
-
+        }
+        for (int i = 0; i < MAINMOTOR_NUM; i++) {
+            // メインチャンネルDCモータの制御
             motors[i].drive(duty[i], Vr1.volt, false);
         }
-
-        int16_t sol_sub[SOL_SUB_NUM];
-        for (int i = 0; i < SOL_SUB_NUM; i++) {
-            sol_sub[i] = buf[2*(i+MOTOR_NUM)+1];
-            sol_sub[i] = sol_sub[i] << 8;
-            sol_sub[i] |= buf[2*(i+MOTOR_NUM)];
-
-            if (abs(sol_sub[i]) != DUTY_MAX+1) {
+        for (int i = MAINMOTOR_NUM; i < motor_num; i++) {
+            if (abs(duty[i]) != DUTY_MAX+1) {
                 // サブチャンネルDCモータの制御
+                SUBmotors[i-MAINMOTOR_NUM].drive(duty[i], Vr1.volt, false);
             }
             else {
                 // ソレノイドの制御
                 solenoid[i].begin();
-                solenoid[i].Switch(sol_sub[i] > 0, false);
+                solenoid[i].Switch(duty[i] > 0, false);
             }
         }
 
-        sleep_ms(DELAY);
+        sleep_us(DELAY);
     }
 
     return 0;
