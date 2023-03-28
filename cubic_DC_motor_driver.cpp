@@ -16,7 +16,7 @@ using namespace std;
 #define PIN_SS   1
 #define PIN_SCLK 2
 #define PIN_MISO 3
-#define SPI_FREQ 400000
+#define SPI_FREQ 4000000
 
 // (wrap + 1) x clkdiv = (クロック周波数) / (PWM周波数)
 // クロック周波数は125MHz
@@ -29,10 +29,10 @@ using namespace std;
 
 #define SOLENOID_TIME 10000 // ソレノイドのON時間(us)
 
-#define MOTOR_NUM 8
+#define MAINMOTOR_NUM 8
 #define SOL_SUB_NUM 4 // ソレノイドとサブチャンネルDCモータの数
 
-#define DELAY 100 //制御分解能(us)
+#define DELAY 1 //制御分解能(us)
 
 class DC_motor {
 private:
@@ -91,6 +91,82 @@ DC_motor motors[] = {
     { 9,  4},
     { 8,  5}
 };
+
+class SUB_motor{
+private:
+    const uint8_t PIN_A;
+    const uint8_t PIN_B;
+    uint8_t slice;
+    bool chan_A;
+    bool chan_B;
+    bool chan_pwm;
+    int16_t duty_prev = 0;
+
+public:
+    SUB_motor(uint8_t PIN_A, uint8_t PIN_B); // コンストラクタ
+    void drive(int16_t duty, float volt, bool ifPrint = false);
+};
+
+SUB_motor::SUB_motor(uint8_t PIN_A, uint8_t PIN_B)
+    : PIN_A(PIN_A), PIN_B(PIN_B)
+{
+    gpio_set_function(PIN_A, GPIO_FUNC_PWM);
+    gpio_set_function(PIN_B, GPIO_FUNC_PWM);
+    chan_A = PIN_A % 2;
+    chan_B = PIN_B % 2;
+
+    slice = pwm_gpio_to_slice_num(PIN_A);
+    pwm_set_wrap(slice, WRAP_DC);
+    pwm_set_clkdiv(slice, CLKDIV_DC);
+    pwm_set_enabled(slice, true);
+    pwm_set_chan_level(slice, chan_A, WRAP_DC + 1);
+    pwm_set_chan_level(slice, chan_B, WRAP_DC + 1);
+}
+
+void SUB_motor::drive(int16_t duty, float volt, bool ifPrint){
+    // 前回のDutyと同じなら何もしない
+    if (duty == duty_prev)
+        return;
+    // 前回のDutyとの差が大きい場合は、差がDUTY_DIFF_MAX以下になるように調整
+    if (abs(duty - duty_prev) > DUTY_DIFF_MAX)
+    {
+        duty = duty_prev + (duty < duty_prev ? -1 : 1) * DUTY_DIFF_MAX;
+    }
+    // サブチャンネルはHIGHがデフォルト（HIGHの時に静止）なので，duty比は最大値1から指定した値を引いたものとする
+    int level = (WRAP_DC + 1.0) * (1.0 - (double)abs(duty) / DUTY_MAX) * V_MIN / volt;
+
+    // dutyの正負が逆転していたらHIGHを与えるピンを変更
+    // bool chan_pwm;
+    if (duty * duty_prev <= 0)
+    {
+        if (duty > 0) // BがHIGHでモーター向かってCW
+        {
+            chan_pwm = chan_A;
+            pwm_set_chan_level(slice, chan_B, WRAP_DC + 1); // chan_BをHIGH
+        }
+        else if (duty < 0)
+        {
+            chan_pwm = chan_B;
+            pwm_set_chan_level(slice, chan_A, WRAP_DC + 1); // chan_AをHIGH
+        }
+        //printf("chan_pwm = %d, chan_A = %d, chan_B = %d\n", chan_pwm, chan_A, chan_B);
+    }
+    pwm_set_chan_level(slice, chan_pwm, level);
+
+    if (ifPrint)
+        printf("duty_prev:%d, duty:%d, level:%d, Vr1:%f\n", duty_prev, duty, level, volt / 36.3 * 4095.0);
+
+    duty_prev = duty;
+}
+
+///*
+SUB_motor SUBmotors[] = {
+    {26, 27},
+    {19, 18},
+    {13, 12},
+    {7, 6}
+};
+//*/
 
 
 class ADC {
@@ -217,11 +293,11 @@ int main()
 
     // adc初期化
     adc_init();
-    uint8_t buf[MOTOR_NUM*2+SOL_SUB_NUM*2]; //SPI通信の情報を受け取るバッファ
+    const int motor_num = MAINMOTOR_NUM + SOL_SUB_NUM;
+    uint8_t buf[motor_num*2]; //SPI通信の情報を受け取るバッファ
     const uint8_t request_buf = 0xFF; // マスターへの送信要求バッファ "11111111"
 
-    int16_t duty[MOTOR_NUM];
-    int16_t sol_sub[SOL_SUB_NUM];
+    int16_t duty[motor_num];
 
     while(true) {
         Vr1.read(false);
@@ -239,29 +315,26 @@ int main()
             // std::cout << std::bitset<16>(duty[0]) << ":" << std::bitset<8>(buf[1]) << "," << std::bitset<8>(buf[0]) << "\n";
         */
 
-        spi_read_blocking(SPI_PORT, 0, buf, MOTOR_NUM*2+SOL_SUB_NUM*2); // データ受信
+        spi_read_blocking(SPI_PORT, 0, buf, motor_num * 2); // データ受信
 
-        for (int i = 0; i < MOTOR_NUM; i++) {
+        for (int i = 0; i < motor_num; i++) {
             duty[i] = buf[2*i+1];
             duty[i] = duty[i] << 8;
             duty[i] |= buf[2*i];
-
+        }
+        for (int i = 0; i < MAINMOTOR_NUM; i++) {
+            // メインチャンネルDCモータの制御
             motors[i].drive(duty[i], Vr1.volt, false);
         }
-
-        
-        for (int i = 0; i < SOL_SUB_NUM; i++) {
-            sol_sub[i] = buf[2*(i+MOTOR_NUM)+1];
-            sol_sub[i] = sol_sub[i] << 8;
-            sol_sub[i] |= buf[2*(i+MOTOR_NUM)];
-
-            if (abs(sol_sub[i]) != DUTY_MAX+1) {
+        for (int i = MAINMOTOR_NUM; i < motor_num; i++) {
+            if (abs(duty[i]) != DUTY_MAX+1) {
                 // サブチャンネルDCモータの制御
+                SUBmotors[i-MAINMOTOR_NUM].drive(duty[i], Vr1.volt, false);
             }
             else {
                 // ソレノイドの制御
                 solenoid[i].begin();
-                solenoid[i].Switch(sol_sub[i] > 0, false);
+                solenoid[i].Switch(duty[i] > 0, false);
             }
         }
 
