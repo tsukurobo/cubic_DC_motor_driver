@@ -159,15 +159,12 @@ void SUB_motor::drive(int16_t duty, float volt, bool ifPrint){
     duty_prev = duty;
 }
 
-///*
 SUB_motor SUBmotors[] = {
     {26, 27},
     {19, 18},
     {13, 12},
     {7, 6}
 };
-//*/
-
 
 class ADC {
 private:
@@ -194,12 +191,13 @@ ADC::ADC(uint8_t PIN)
 void ADC::read(bool ifPrint) {
     adc_select_input(PIN_TO_INPUT.at(PIN));
     raw_val = adc_read();
-    volt = raw_val * 36.3 / 4095.0;
+    volt = raw_val * 39.6 / 4095.0;
     if (ifPrint)
         printf("raw_val:%d, volt:%f\n", raw_val, volt);
 }
 
 ADC Vr1 = ADC(29);
+ADC Vr2 = ADC(28);
 
 class Solenoid {
 private:
@@ -293,6 +291,19 @@ int main()
 
     // adc初期化
     adc_init();
+    while(true){
+        Vr2.read(false); // 起動時にVr2の値が閾値よりも高ければその後の負荷の増加などで止まらないようにする。
+        if(Vr2.volt > V_MIN){
+            sleep_ms(100);
+            gpio_init(28);
+            gpio_set_dir(28,GPIO_OUT);
+            gpio_put(28,1);
+            break;
+        }
+        sleep_ms(1);
+    }
+    
+
     const int motor_num = MAINMOTOR_NUM + SOL_SUB_NUM;
     uint8_t buf[motor_num*2]; //SPI通信の情報を受け取るバッファ
     const uint8_t request_buf = 0xFF; // マスターへの送信要求バッファ "11111111"
@@ -305,11 +316,8 @@ int main()
         spi_write_blocking(SPI_PORT, &request_buf, 1); // リクエスト送信
             
         /*
-            for(int i=0;i<8;i++){
+            for(int i=0;i<motor_num;i++){
                 std::cout << std::bitset<16>(duty[i]) << ",";
-            }
-            for(int i=0;i<4;i++){
-                std::cout << std::bitset<16>(sol_sub[i]) << ",";
             }
             std::cout << "\n";
             // std::cout << std::bitset<16>(duty[0]) << ":" << std::bitset<8>(buf[1]) << "," << std::bitset<8>(buf[0]) << "\n";
