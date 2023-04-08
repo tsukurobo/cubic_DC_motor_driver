@@ -23,7 +23,7 @@ using namespace std;
 // PWM周波数は20kHz
 #define WRAP_DC 124
 #define CLKDIV_DC 50
-#define V_MIN 23.75
+#define V_MIN 22.8
 #define DUTY_DIFF_MAX 70 // 応答性が悪い場合は少しあげてもいいかも
 #define DUTY_MAX 32766
 
@@ -291,6 +291,7 @@ int main()
 
     // adc初期化
     adc_init();
+    ///*
     while(true){
         Vr2.read(false); // 起動時にVr2の値が閾値よりも高ければその後の負荷の増加などで止まらないようにする。
         if(Vr2.volt > V_MIN){
@@ -302,6 +303,7 @@ int main()
         }
         sleep_ms(1);
     }
+    //*/
     
 
     const int motor_num = MAINMOTOR_NUM + SOL_SUB_NUM;
