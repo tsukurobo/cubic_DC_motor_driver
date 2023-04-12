@@ -133,7 +133,7 @@ void SUB_motor::drive(int16_t duty, float volt, bool ifPrint){
         duty = duty_prev + (duty < duty_prev ? -1 : 1) * DUTY_DIFF_MAX;
     }
     // サブチャンネルはHIGHがデフォルト（HIGHの時に静止）なので，duty比は最大値1から指定した値を引いたものとする
-    int level = (WRAP_DC + 1.0) * (1.0 - (double)abs(duty) / DUTY_MAX) * V_MIN / volt;
+    int level = (WRAP_DC + 1.0) * (1.0 - (double)abs(duty) / DUTY_MAX * V_MIN / volt);
 
     // dutyの正負が逆転していたらHIGHを与えるピンを変更
     // bool chan_pwm;
