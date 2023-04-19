@@ -24,7 +24,7 @@ using namespace std;
 #define WRAP_DC 124
 #define CLKDIV_DC 50
 #define V_MIN 22.8
-#define DUTY_DIFF_MAX 450 // 応答性が悪い場合は少しあげてもいいかも
+#define DUTY_DIFF_MAX 100 // モードラが壊れないようDutyの変化を制限
 #define DUTY_MAX 32766
 
 #define SOLENOID_TIME 10000 // ソレノイドのON時間(us)
@@ -343,8 +343,8 @@ int main()
             }
             else {
                 // ソレノイドの制御
-                solenoid[i].begin();
-                solenoid[i].Switch(duty[i] > 0, false);
+                // solenoid[i].begin();
+                // solenoid[i].Switch(duty[i] > 0, false);
             }
         }
 
