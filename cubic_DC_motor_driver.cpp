@@ -107,6 +107,7 @@ public:
     void drive(int16_t duty, float volt, bool ifPrint = false);
 };
 
+
 SUB_motor::SUB_motor(uint8_t PIN_A, uint8_t PIN_B)
     : PIN_A(PIN_A), PIN_B(PIN_B)
 {
@@ -159,6 +160,34 @@ void SUB_motor::drive(int16_t duty, float volt, bool ifPrint){
     duty_prev = duty;
 }
 
+// // デジタル出力のセットアップ
+// SUB_motor::SUB_motor(uint8_t PIN_A, uint8_t PIN_B)
+//     : PIN_A(PIN_A), PIN_B(PIN_B)
+// {
+//     gpio_init(PIN_A);
+//     gpio_set_dir(PIN_A, GPIO_OUT);
+//     gpio_put(PIN_A, 1);
+//     gpio_init(PIN_B);
+//     gpio_set_dir(PIN_B, GPIO_OUT);
+//     gpio_put(PIN_B, 1);
+// }
+
+// // デジタル出力をするのみの関数
+// void SUB_motor::drive(int16_t duty, float volt, bool ifPrint){
+//     if(duty > 0){
+//         gpio_put(PIN_A, 0);
+//         gpio_put(PIN_B, 1);
+//     }
+//     else if(duty < 0){
+//         gpio_put(PIN_A, 1);
+//         gpio_put(PIN_B, 0);
+//     }
+//     else{
+//         gpio_put(PIN_A, 1);
+//         gpio_put(PIN_B, 1);
+//     }
+// }
+
 SUB_motor SUBmotors[] = {
     {26, 27},
     {19, 18},
@@ -175,11 +204,12 @@ private:
         {28, 2},
         {29, 3}
     };
+    float volt_prev = 0;
 public:
     uint raw_val = 0; // ADCを読んだ生の値
     float volt = 0; // 計算された電圧値
     ADC(uint8_t PIN);
-    void read(bool ifPrint = false);
+    void read(bool ifPrint = false, bool ifFilter = false);
 };
 
 ADC::ADC(uint8_t PIN)
@@ -188,10 +218,17 @@ ADC::ADC(uint8_t PIN)
     adc_gpio_init(PIN);
 }
 
-void ADC::read(bool ifPrint) {
+void ADC::read(bool ifPrint, bool ifFilter) {
     adc_select_input(PIN_TO_INPUT.at(PIN));
     raw_val = adc_read();
-    volt = raw_val * 39.6 / 4095.0;
+
+    if (ifFilter)
+        volt = volt_prev * 0.99 + (raw_val * 39.6 / 4096.0) * 0.01;
+    else
+        volt = raw_val * 39.6 / 4096.0;
+    if (volt < V_MIN) volt = V_MIN;
+    volt_prev = volt;
+
     if (ifPrint)
         printf("raw_val:%d, volt:%f\n", raw_val, volt);
 }
@@ -293,7 +330,7 @@ int main()
     adc_init();
     ///*
     while(true){
-        Vr2.read(false); // 起動時にVr2の値が閾値よりも高ければその後の負荷の増加などで止まらないようにする。
+        Vr2.read(false, false); // 起動時にVr2の値が閾値よりも高ければその後の負荷の増加などで止まらないようにする。
         if(Vr2.volt > V_MIN){
             sleep_ms(100);
             gpio_init(28);
@@ -311,6 +348,9 @@ int main()
     const uint8_t request_buf = 0xFF; // マスターへの送信要求バッファ "11111111"
 
     int16_t duty[motor_num];
+
+    Vr1.read(false, false);
+    int cnt = 0;
 
     while(true) {
         Vr1.read(false);
@@ -347,6 +387,12 @@ int main()
                 // solenoid[i].begin();
                 // solenoid[i].Switch(duty[i] > 0, false);
             }
+        }
+
+        cnt++;
+        if (cnt % 100 == 0) {
+            Vr1.read(false, true);
+            cnt = 0;
         }
 
         sleep_us(DELAY);
