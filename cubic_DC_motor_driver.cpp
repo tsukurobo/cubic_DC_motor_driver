@@ -23,7 +23,7 @@ using namespace std;
 // PWM周波数は20kHz
 #define WRAP_DC 124
 #define CLKDIV_DC 50
-#define V_MIN 22.8
+#define V_MIN 22.8 // Cubicの動作可能最低電圧
 #define DUTY_DIFF_MAX 100 // モードラが壊れないようDutyの変化を制限
 #define DUTY_MAX 32766
 
@@ -133,7 +133,7 @@ void SUB_motor::drive(int16_t duty, float volt, bool ifPrint){
         duty = duty_prev + (duty < duty_prev ? -1 : 1) * DUTY_DIFF_MAX;
     }
     // サブチャンネルはHIGHがデフォルト（HIGHの時に静止）なので，duty比は最大値1から指定した値を引いたものとする
-    int level = (WRAP_DC + 1.0) * (1.0 - (double)abs(duty) / DUTY_MAX * V_MIN / volt);
+    int level = (WRAP_DC + 1.0) * (1.0 - (double)abs(duty)/DUTY_MAX * V_MIN/volt);
 
     // dutyの正負が逆転していたらHIGHを与えるピンを変更
     // bool chan_pwm;
@@ -204,7 +204,7 @@ private:
     const uint8_t PIN_A;
     const uint8_t PIN_B;
     uint64_t time_pre = time_us_64();
-    bool init = false;
+        bool init = false;
 public:
     Solenoid(uint8_t PIN_A, uint8_t PIN_B);
     void begin();
@@ -215,7 +215,7 @@ public:
 Solenoid::Solenoid(uint8_t PIN_A, uint8_t PIN_B)
     : PIN_A(PIN_A), PIN_B(PIN_B)
 {
-}
+    }
 
 // 最初の1回だけ初期化する関数
 void Solenoid::begin() {
@@ -314,12 +314,13 @@ int main()
 
     while(true) {
         Vr1.read(false);
-
+        if(Vr1.volt < V_MIN) Vr1.volt = V_MIN; 
+        
         spi_write_blocking(SPI_PORT, &request_buf, 1); // リクエスト送信
             
         /*
             for(int i=0;i<motor_num;i++){
-                std::cout << std::bitset<16>(duty[i]) << ",";
+            std::cout << std::bitset<16>(duty[i]) << ",";
             }
             std::cout << "\n";
             // std::cout << std::bitset<16>(duty[0]) << ":" << std::bitset<8>(buf[1]) << "," << std::bitset<8>(buf[0]) << "\n";
