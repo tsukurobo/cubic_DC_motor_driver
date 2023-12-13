@@ -95,9 +95,9 @@ DC_motor motors[] = {
     {9, 4},
     {8, 5}};
 
-class SUB_motor
+class Sub_channel
 {
-private:
+protected:
     const uint8_t PIN_A;
     const uint8_t PIN_B;
     uint8_t slice;
@@ -105,13 +105,17 @@ private:
     bool chan_B;
     bool chan_pwm;
     int16_t duty_prev = 0;
+    uint64_t time_pre = time_us_64();
+    bool init = false;
 
 public:
-    SUB_motor(uint8_t PIN_A, uint8_t PIN_B); // コンストラクタ
-    void drive(int16_t duty, float volt, bool ifPrint = false);
+    int8_t state = -1;                         // -1:初期化, 0:OFF, 1:ON
+    Sub_channel(uint8_t PIN_A, uint8_t PIN_B); // コンストラクタ
+    void motorDrive(int16_t duty, float volt, bool ifPrint = false);
+    void solenoidSwitch(bool state_new, bool ifPrint);
 };
 
-SUB_motor::SUB_motor(uint8_t PIN_A, uint8_t PIN_B)
+Sub_channel::Sub_channel(uint8_t PIN_A, uint8_t PIN_B)
     : PIN_A(PIN_A), PIN_B(PIN_B)
 {
     gpio_set_function(PIN_A, GPIO_FUNC_PWM);
@@ -127,7 +131,7 @@ SUB_motor::SUB_motor(uint8_t PIN_A, uint8_t PIN_B)
     pwm_set_chan_level(slice, chan_B, WRAP_DC + 1);
 }
 
-void SUB_motor::drive(int16_t duty, float volt, bool ifPrint)
+void Sub_channel::motorDrive(int16_t duty, float volt, bool ifPrint)
 {
     // 前回のDutyと同じなら何もしない
     if (duty == duty_prev)
@@ -164,7 +168,74 @@ void SUB_motor::drive(int16_t duty, float volt, bool ifPrint)
     duty_prev = duty;
 }
 
-SUB_motor SUBmotors[] = {
+void Sub_channel::solenoidSwitch(bool state_new, bool ifPrint)
+{
+    uint64_t time_now = time_us_64();
+    // SOLENOID_TIME(us)以下の間は何もしない
+    if (time_now - time_pre < SOLENOID_TIME)
+        return;
+
+    if (state == state_new)
+    {
+        // 両方HIGHにする
+        gpio_put(PIN_A, 1);
+        gpio_put(PIN_B, 1);
+        // printf("HIGH HIGH  ");
+    }
+    else
+    {
+        // 一方LOWにする
+        if (state_new)
+        {
+            gpio_put(PIN_A, 1);
+            gpio_put(PIN_B, 0);
+            // printf("HIGH LOW  ");
+        }
+        else
+        {
+            gpio_put(PIN_A, 0);
+            gpio_put(PIN_B, 1);
+            // printf("LOW HIGH  ");
+        }
+        time_pre = time_now;
+        state = state_new;
+    }
+    if (ifPrint)
+        printf("state:%d, time:%d\n", state, time_now);
+}
+
+// class Solenoid
+// {
+// private:
+//     const uint8_t PIN_A;
+//     const uint8_t PIN_B;
+//     uint64_t time_pre = time_us_64();
+//     bool init = false;
+
+// public:
+//     Solenoid(uint8_t PIN_A, uint8_t PIN_B);
+//     void begin();
+//     void Switch(bool state, bool ifPrint = false);
+//     int8_t state = -1; // -1:初期化, 0:OFF, 1:ON
+// };
+
+// // 最初の1回だけ初期化する関数
+// void Solenoid::begin()
+// {
+//     if (init == false)
+//     {
+//         // 初期化
+//         gpio_init(PIN_A);
+//         gpio_init(PIN_B);
+//         gpio_set_dir(PIN_A, GPIO_OUT);
+//         gpio_set_dir(PIN_B, GPIO_OUT);
+//         gpio_put(PIN_A, 1);
+//         gpio_put(PIN_B, 1);
+//         init = true;
+//     }
+// }
+
+Sub_channel Sub_channel[] = {
     {26, 27},
     {19, 18},
     {13, 12},
@@ -213,84 +284,6 @@ void ADC::read(bool ifPrint, bool ifFilter)
 
 ADC Vr1 = ADC(29);
 ADC Vr2 = ADC(28);
-
-class Solenoid
-{
-private:
-    const uint8_t PIN_A;
-    const uint8_t PIN_B;
-    uint64_t time_pre = time_us_64();
-    bool init = false;
-
-public:
-    Solenoid(uint8_t PIN_A, uint8_t PIN_B);
-    void begin();
-    void Switch(bool state, bool ifPrint = false);
-    int8_t state = -1; // -1:初期化, 0:OFF, 1:ON
-};
-
-Solenoid::Solenoid(uint8_t PIN_A, uint8_t PIN_B)
-    : PIN_A(PIN_A), PIN_B(PIN_B)
-{
-}
-
-// 最初の1回だけ初期化する関数
-void Solenoid::begin()
-{
-    if (init == false)
-    {
-        // 初期化
-        gpio_init(PIN_A);
-        gpio_init(PIN_B);
-        gpio_set_dir(PIN_A, GPIO_OUT);
-        gpio_set_dir(PIN_B, GPIO_OUT);
-        gpio_put(PIN_A, 1);
-        gpio_put(PIN_B, 1);
-        init = true;
-    }
-}
-
-void Solenoid::Switch(bool state_new, bool ifPrint)
-{
-    uint64_t time_now = time_us_64();
-    // SOLENOID_TIME(us)以下の間は何もしない
-    if (time_now - time_pre < SOLENOID_TIME)
-        return;
-
-    if (state == state_new)
-    {
-        // 両方HIGHにする
-        gpio_put(PIN_A, 1);
-        gpio_put(PIN_B, 1);
-        // printf("HIGH HIGH  ");
-    }
-    else
-    {
-        // 一方LOWにする
-        if (state_new)
-        {
-            gpio_put(PIN_A, 1);
-            gpio_put(PIN_B, 0);
-            // printf("HIGH LOW  ");
-        }
-        else
-        {
-            gpio_put(PIN_A, 0);
-            gpio_put(PIN_B, 1);
-            // printf("LOW HIGH  ");
-        }
-        time_pre = time_now;
-        state = state_new;
-    }
-    if (ifPrint)
-        printf("state:%d, time:%d\n", state, time_now);
-}
-
-Solenoid solenoid[] = {
-    {26, 27},
-    {19, 18},
-    {13, 12},
-    {7, 6}};
 
 int main()
 {
@@ -374,7 +367,7 @@ int main()
             if (abs(duty[i]) != DUTY_MAX + 1)
             {
                 // サブチャンネルDCモータの制御
-                SUBmotors[i - MAINMOTOR_NUM].drive(duty[i], Vr1.volt, false);
+                Sub_channel[i - MAINMOTOR_NUM].motorDrive(duty[i], Vr1.volt, false);
             }
             else
             {
