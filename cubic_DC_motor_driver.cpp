@@ -178,8 +178,8 @@ void Sub_channel::solenoidSwitch(bool state_new, bool ifPrint)
     if (state == state_new)
     {
         // 両方HIGHにする
-        gpio_put(PIN_A, 1);
-        gpio_put(PIN_B, 1);
+        pwm_set_chan_level(slice, chan_A, WRAP_DC + 1);
+        pwm_set_chan_level(slice, chan_B, WRAP_DC + 1);
         // printf("HIGH HIGH  ");
     }
     else
@@ -187,14 +187,14 @@ void Sub_channel::solenoidSwitch(bool state_new, bool ifPrint)
         // 一方LOWにする
         if (state_new)
         {
-            gpio_put(PIN_A, 1);
-            gpio_put(PIN_B, 0);
+            pwm_set_chan_level(slice, chan_A, WRAP_DC + 1);
+            pwm_set_chan_level(slice, chan_B, 0);
             // printf("HIGH LOW  ");
         }
         else
         {
-            gpio_put(PIN_A, 0);
-            gpio_put(PIN_B, 1);
+            pwm_set_chan_level(slice, chan_A, 0);
+            pwm_set_chan_level(slice, chan_B, WRAP_DC + 1);
             // printf("LOW HIGH  ");
         }
         time_pre = time_now;
@@ -371,9 +371,8 @@ int main()
             }
             else
             {
-                // ソレノイドの制御
-                // solenoid[i].begin();
-                // solenoid[i].Switch(duty[i] > 0, false);
+                //ソレノイドの制御;
+                Sub_channel[i - MAINMOTOR_NUM].solenoidSwitch(duty[i] > 0, false);
             }
         }
 
