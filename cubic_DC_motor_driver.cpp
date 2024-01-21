@@ -27,7 +27,7 @@ using namespace std;
 #define DUTY_DIFF_MAX 100 // モードラが壊れないようDutyの変化を制限
 #define DUTY_MAX 32766
 
-#define SOLENOID_TIME 20000 // ソレノイドのON時間(us)
+#define SOLENOID_TIME 70000 // ソレノイドのON時間(us)
 
 #define MAINMOTOR_NUM 8
 #define SOL_SUB_NUM 4 // ソレノイドとサブチャンネルDCモータの数
@@ -306,11 +306,11 @@ int main() {
         spi_write_blocking(SPI_PORT, &request_buf, 1); // リクエスト送信
 
         /*
-            for(int i=0;i<motor_num;i++){
-            std::cout << std::bitset<16>(duty[i]) << ",";
-            }
-            std::cout << "\n";
-            // std::cout << std::bitset<16>(duty[0]) << ":" <<
+                for(int i=0;i<motor_num;i++){
+                std::cout << std::bitset<16>(duty[i]) << ",";
+                }
+                std::cout << "\n";
+                // std::cout << std::bitset<16>(duty[0]) << ":" <<
            std::bitset<8>(buf[1]) << "," << std::bitset<8>(buf[0]) << "\n";
         */
 
