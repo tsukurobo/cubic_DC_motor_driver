@@ -27,7 +27,7 @@ using namespace std;
 #define DUTY_DIFF_MAX 100 // モードラが壊れないようDutyの変化を制限
 #define DUTY_MAX 32766
 
-#define SOLENOID_TIME 10000 // ソレノイドのON時間(us)
+#define SOLENOID_TIME 20000 // ソレノイドのON時間(us)
 
 #define MAINMOTOR_NUM 8
 #define SOL_SUB_NUM 4 // ソレノイドとサブチャンネルDCモータの数
