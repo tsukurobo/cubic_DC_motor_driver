@@ -1,14 +1,14 @@
-#include <stdio.h>
-#include "pico/stdlib.h"
-#include "hardware/spi.h"
-#include "hardware/pwm.h"
-#include "hardware/gpio.h"
-#include "hardware/adc.h"
-#include "iostream"
 #include "bitset"
+#include "hardware/adc.h"
+#include "hardware/gpio.h"
+#include "hardware/pwm.h"
+#include "hardware/spi.h"
+#include "iostream"
+#include "pico/stdlib.h"
+#include <stdio.h>
 
-#include <map>
 #include <cstdlib> // abs() for integer
+#include <map>
 using namespace std;
 
 #define SPI_PORT spi0
@@ -34,23 +34,21 @@ using namespace std;
 
 #define DELAY 1 // 制御分解能(us)
 
-class DC_motor
-{
-private:
+class DC_motor {
+  private:
     const uint8_t PIN_DIRE;
     const uint8_t PIN_PWM;
     uint8_t slice;
     bool chan;
     int16_t duty_prev = 0;
 
-public:
+  public:
     DC_motor(uint8_t PIN_PWM, uint8_t PIN_DIRE);
     void drive(int16_t duty, float volt, bool ifPrint = false);
 };
 
 DC_motor::DC_motor(uint8_t PIN_PWM, uint8_t PIN_DIRE)
-    : PIN_DIRE(PIN_DIRE), PIN_PWM(PIN_PWM)
-{
+    : PIN_DIRE(PIN_DIRE), PIN_PWM(PIN_PWM) {
     gpio_init(PIN_DIRE);
     gpio_set_dir(PIN_DIRE, GPIO_OUT);
 
@@ -64,14 +62,12 @@ DC_motor::DC_motor(uint8_t PIN_PWM, uint8_t PIN_DIRE)
     pwm_set_chan_level(slice, chan, 0);
 }
 
-void DC_motor::drive(int16_t duty, float volt, bool ifPrint)
-{
+void DC_motor::drive(int16_t duty, float volt, bool ifPrint) {
     // 前回のDutyと同じなら何もしない
     if (duty == duty_prev)
         return;
     // 前回のDutyとの差が大きい場合は、差がDUTY_DIFF_MAX以下になるように調整
-    if (abs(duty - duty_prev) > DUTY_DIFF_MAX)
-    {
+    if (abs(duty - duty_prev) > DUTY_DIFF_MAX) {
         duty = duty_prev + (duty < duty_prev ? -1 : 1) * DUTY_DIFF_MAX;
     }
 
@@ -80,24 +76,17 @@ void DC_motor::drive(int16_t duty, float volt, bool ifPrint)
     gpio_put(PIN_DIRE, (duty < 0 ? 1 : 0));
 
     if (ifPrint)
-        printf("duty_prev:%d, duty:%d, level:%d, Vr1:%f\n", duty_prev, duty, level, volt / 36.3 * 4095.0);
+        printf("duty_prev:%d, duty:%d, level:%d, Vr1:%f\n", duty_prev, duty,
+               level, volt / 36.3 * 4095.0);
 
     duty_prev = duty;
 }
 
-DC_motor motors[] = {
-    {16, 25},
-    {17, 24},
-    {21, 22},
-    {20, 23},
-    {15, 10},
-    {14, 11},
-    {9, 4},
-    {8, 5}};
+DC_motor motors[] = {{16, 25}, {17, 24}, {21, 22}, {20, 23},
+                     {15, 10}, {14, 11}, {9, 4},   {8, 5}};
 
-class Sub_channel
-{
-protected:
+class Sub_channel {
+  protected:
     const uint8_t PIN_A;
     const uint8_t PIN_B;
     uint8_t slice;
@@ -108,7 +97,7 @@ protected:
     uint64_t time_pre = time_us_64();
     bool init = false;
 
-public:
+  public:
     int8_t state = -1;                         // -1:初期化, 0:OFF, 1:ON
     Sub_channel(uint8_t PIN_A, uint8_t PIN_B); // コンストラクタ
     void motorDrive(int16_t duty, float volt, bool ifPrint = false);
@@ -116,8 +105,7 @@ public:
 };
 
 Sub_channel::Sub_channel(uint8_t PIN_A, uint8_t PIN_B)
-    : PIN_A(PIN_A), PIN_B(PIN_B)
-{
+    : PIN_A(PIN_A), PIN_B(PIN_B) {
     gpio_set_function(PIN_A, GPIO_FUNC_PWM);
     gpio_set_function(PIN_B, GPIO_FUNC_PWM);
     chan_A = PIN_A % 2;
@@ -131,68 +119,59 @@ Sub_channel::Sub_channel(uint8_t PIN_A, uint8_t PIN_B)
     pwm_set_chan_level(slice, chan_B, WRAP_DC + 1);
 }
 
-void Sub_channel::motorDrive(int16_t duty, float volt, bool ifPrint)
-{
+void Sub_channel::motorDrive(int16_t duty, float volt, bool ifPrint) {
     // 前回のDutyと同じなら何もしない
     if (duty == duty_prev)
         return;
     // 前回のDutyとの差が大きい場合は、差がDUTY_DIFF_MAX以下になるように調整
-    if (abs(duty - duty_prev) > DUTY_DIFF_MAX)
-    {
+    if (abs(duty - duty_prev) > DUTY_DIFF_MAX) {
         duty = duty_prev + (duty < duty_prev ? -1 : 1) * DUTY_DIFF_MAX;
     }
     // サブチャンネルはHIGHがデフォルト（HIGHの時に静止）なので，duty比は最大値1から指定した値を引いたものとする
-    int level = (WRAP_DC + 1.0) * (1.0 - (double)abs(duty) / DUTY_MAX * V_MIN / volt);
+    int level =
+        (WRAP_DC + 1.0) * (1.0 - (double)abs(duty) / DUTY_MAX * V_MIN / volt);
 
     // dutyの正負が逆転していたらHIGHを与えるピンを変更
     // bool chan_pwm;
-    if (duty * duty_prev <= 0)
-    {
+    if (duty * duty_prev <= 0) {
         if (duty > 0) // BがHIGHでモーター向かってCW
         {
             chan_pwm = chan_A;
             pwm_set_chan_level(slice, chan_B, WRAP_DC + 1); // chan_BをHIGH
-        }
-        else if (duty < 0)
-        {
+        } else if (duty < 0) {
             chan_pwm = chan_B;
             pwm_set_chan_level(slice, chan_A, WRAP_DC + 1); // chan_AをHIGH
         }
-        // printf("chan_pwm = %d, chan_A = %d, chan_B = %d\n", chan_pwm, chan_A, chan_B);
+        // printf("chan_pwm = %d, chan_A = %d, chan_B = %d\n", chan_pwm, chan_A,
+        // chan_B);
     }
     pwm_set_chan_level(slice, chan_pwm, level);
 
     if (ifPrint)
-        printf("duty_prev:%d, duty:%d, level:%d, Vr1:%f\n", duty_prev, duty, level, volt / 36.3 * 4095.0);
+        printf("duty_prev:%d, duty:%d, level:%d, Vr1:%f\n", duty_prev, duty,
+               level, volt / 36.3 * 4095.0);
 
     duty_prev = duty;
 }
 
-void Sub_channel::solenoidSwitch(bool state_new, bool ifPrint)
-{
+void Sub_channel::solenoidSwitch(bool state_new, bool ifPrint) {
     uint64_t time_now = time_us_64();
     // SOLENOID_TIME(us)以下の間は何もしない
     if (time_now - time_pre < SOLENOID_TIME)
         return;
 
-    if (state == state_new)
-    {
+    if (state == state_new) {
         // 両方HIGHにする
         pwm_set_chan_level(slice, chan_A, WRAP_DC + 1);
         pwm_set_chan_level(slice, chan_B, WRAP_DC + 1);
         // printf("HIGH HIGH  ");
-    }
-    else
-    {
+    } else {
         // 一方LOWにする
-        if (state_new)
-        {
+        if (state_new) {
             pwm_set_chan_level(slice, chan_A, WRAP_DC + 1);
             pwm_set_chan_level(slice, chan_B, 0);
             // printf("HIGH LOW  ");
-        }
-        else
-        {
+        } else {
             pwm_set_chan_level(slice, chan_A, 0);
             pwm_set_chan_level(slice, chan_B, WRAP_DC + 1);
             // printf("LOW HIGH  ");
@@ -235,38 +214,25 @@ void Sub_channel::solenoidSwitch(bool state_new, bool ifPrint)
 //     }
 // }
 
-Sub_channel Sub_channel[] = {
-    {26, 27},
-    {19, 18},
-    {13, 12},
-    {7, 6}};
+Sub_channel Sub_channel[] = {{26, 27}, {19, 18}, {13, 12}, {7, 6}};
 
-class ADC
-{
-private:
+class ADC {
+  private:
     const uint8_t PIN;
     static inline const map<uint8_t, uint8_t> PIN_TO_INPUT = {
-        {26, 0},
-        {27, 1},
-        {28, 2},
-        {29, 3}};
+        {26, 0}, {27, 1}, {28, 2}, {29, 3}};
     float volt_prev = 0;
 
-public:
+  public:
     uint raw_val = 0; // ADCを読んだ生の値
     float volt = 0;   // 計算された電圧値
     ADC(uint8_t PIN);
     void read(bool ifPrint = false, bool ifFilter = false);
 };
 
-ADC::ADC(uint8_t PIN)
-    : PIN(PIN)
-{
-    adc_gpio_init(PIN);
-}
+ADC::ADC(uint8_t PIN) : PIN(PIN) { adc_gpio_init(PIN); }
 
-void ADC::read(bool ifPrint, bool ifFilter)
-{
+void ADC::read(bool ifPrint, bool ifFilter) {
     adc_select_input(PIN_TO_INPUT.at(PIN));
     raw_val = adc_read();
 
@@ -285,8 +251,7 @@ void ADC::read(bool ifPrint, bool ifFilter)
 ADC Vr1 = ADC(29);
 ADC Vr2 = ADC(28);
 
-int main()
-{
+int main() {
     // コンデンサーの充電を待つ
     ///*
     sleep_ms(1000);
@@ -309,11 +274,11 @@ int main()
     // adc初期化
     adc_init();
     ///*
-    while (true)
-    {
-        Vr2.read(false, false); // 起動時にVr2の値が閾値よりも高ければその後の負荷の増加などで止まらないようにする。
-        if (Vr2.volt > V_MIN)
-        {
+    while (true) {
+        Vr2.read(
+            false,
+            false); // 起動時にVr2の値が閾値よりも高ければその後の負荷の増加などで止まらないようにする。
+        if (Vr2.volt > V_MIN) {
             sleep_ms(100);
             gpio_init(28);
             gpio_set_dir(28, GPIO_OUT);
@@ -325,7 +290,7 @@ int main()
     //*/
 
     const int motor_num = MAINMOTOR_NUM + SOL_SUB_NUM;
-    uint8_t buf[motor_num * 2];       // SPI通信の情報を受け取るバッファ
+    uint8_t buf[motor_num * 2]; // SPI通信の情報を受け取るバッファ
     const uint8_t request_buf = 0xFF; // マスターへの送信要求バッファ "11111111"
 
     int16_t duty[motor_num];
@@ -333,8 +298,7 @@ int main()
     Vr1.read(false, false);
     int cnt = 0;
 
-    while (true)
-    {
+    while (true) {
         Vr1.read(false);
         if (Vr1.volt < V_MIN)
             Vr1.volt = V_MIN;
@@ -346,39 +310,35 @@ int main()
             std::cout << std::bitset<16>(duty[i]) << ",";
             }
             std::cout << "\n";
-            // std::cout << std::bitset<16>(duty[0]) << ":" << std::bitset<8>(buf[1]) << "," << std::bitset<8>(buf[0]) << "\n";
+            // std::cout << std::bitset<16>(duty[0]) << ":" <<
+           std::bitset<8>(buf[1]) << "," << std::bitset<8>(buf[0]) << "\n";
         */
 
         spi_read_blocking(SPI_PORT, 0, buf, motor_num * 2); // データ受信
 
-        for (int i = 0; i < motor_num; i++)
-        {
+        for (int i = 0; i < motor_num; i++) {
             duty[i] = buf[2 * i + 1];
             duty[i] = duty[i] << 8;
             duty[i] |= buf[2 * i];
         }
-        for (int i = 0; i < MAINMOTOR_NUM; i++)
-        {
+        for (int i = 0; i < MAINMOTOR_NUM; i++) {
             // メインチャンネルDCモータの制御
             motors[i].drive(duty[i], Vr1.volt, false);
         }
-        for (int i = MAINMOTOR_NUM; i < motor_num; i++)
-        {
-            if (abs(duty[i]) != DUTY_MAX + 1)
-            {
+        for (int i = MAINMOTOR_NUM; i < motor_num; i++) {
+            if (abs(duty[i]) != DUTY_MAX + 1) {
                 // サブチャンネルDCモータの制御
-                Sub_channel[i - MAINMOTOR_NUM].motorDrive(duty[i], Vr1.volt, false);
-            }
-            else
-            {
-                //ソレノイドの制御;
-                Sub_channel[i - MAINMOTOR_NUM].solenoidSwitch(duty[i] > 0, false);
+                Sub_channel[i - MAINMOTOR_NUM].motorDrive(duty[i], Vr1.volt,
+                                                          false);
+            } else {
+                // ソレノイドの制御;
+                Sub_channel[i - MAINMOTOR_NUM].solenoidSwitch(duty[i] > 0,
+                                                              false);
             }
         }
 
         cnt++;
-        if (cnt % 100 == 0)
-        {
+        if (cnt % 100 == 0) {
             Vr1.read(false, true);
             cnt = 0;
         }
