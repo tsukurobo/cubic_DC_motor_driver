@@ -132,7 +132,6 @@ void Sub_channel::motorDrive(int16_t duty, float volt, bool ifPrint) {
         (WRAP_DC + 1.0) * (1.0 - (double)abs(duty) / DUTY_MAX * V_MIN / volt);
 
     // dutyの正負が逆転していたらHIGHを与えるピンを変更
-    // bool chan_pwm;
     if (duty * duty_prev <= 0) {
         if (duty > 0) // BがHIGHでモーター向かってCW
         {
@@ -182,37 +181,6 @@ void Sub_channel::solenoidSwitch(bool state_new, bool ifPrint) {
     if (ifPrint)
         printf("state:%d, time:%d\n", state, time_now);
 }
-
-// class Solenoid
-// {
-// private:
-//     const uint8_t PIN_A;
-//     const uint8_t PIN_B;
-//     uint64_t time_pre = time_us_64();
-//     bool init = false;
-
-// public:
-//     Solenoid(uint8_t PIN_A, uint8_t PIN_B);
-//     void begin();
-//     void Switch(bool state, bool ifPrint = false);
-//     int8_t state = -1; // -1:初期化, 0:OFF, 1:ON
-// };
-
-// // 最初の1回だけ初期化する関数
-// void Solenoid::begin()
-// {
-//     if (init == false)
-//     {
-//         // 初期化
-//         gpio_init(PIN_A);
-//         gpio_init(PIN_B);
-//         gpio_set_dir(PIN_A, GPIO_OUT);
-//         gpio_set_dir(PIN_B, GPIO_OUT);
-//         gpio_put(PIN_A, 1);
-//         gpio_put(PIN_B, 1);
-//         init = true;
-//     }
-// }
 
 Sub_channel Sub_channel[] = {{26, 27}, {19, 18}, {13, 12}, {7, 6}};
 
