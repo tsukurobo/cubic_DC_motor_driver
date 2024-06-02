@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 # Initialise pico_sdk from installed location
 # (note this can come from environment, CMake cache etc)
-set(PICO_SDK_PATH "C:/Users/KantaNakayama/Documents/Pico/pico-sdk")
+set(PICO_SDK_PATH "C:/code/pico/pico-sdk")
  
 set(PICO_BOARD pico CACHE STRING "Board type")
 
@@ -25,28 +25,28 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(cubic_DC_motor_driver cubic_DC_motor_driver.cpp )
+add_executable(${PROJECT_NAME} cubic_DC_motor_driver.cpp )
 
-pico_set_program_name(cubic_DC_motor_driver "cubic_DC_motor_driver")
-pico_set_program_version(cubic_DC_motor_driver "0.1")
+pico_set_program_name(${PROJECT_NAME} "cubic_DC_motor_driver")
+pico_set_program_version(${PROJECT_NAME} "0.1")
 
-pico_enable_stdio_uart(cubic_DC_motor_driver 0)
-pico_enable_stdio_usb(cubic_DC_motor_driver 1)
+pico_enable_stdio_uart(${PROJECT_NAME} 0)
+pico_enable_stdio_usb(${PROJECT_NAME} 1)
 
 # Add the standard library to the build
-target_link_libraries(cubic_DC_motor_driver
+target_link_libraries(${PROJECT_NAME}
         pico_stdlib)
 
 # Add the standard include files to the build
-target_include_directories(cubic_DC_motor_driver PRIVATE
+target_include_directories(${PROJECT_NAME} PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}
   ${CMAKE_CURRENT_LIST_DIR}/.. # for our common lwipopts or any other standard includes, if required
 )
 
 # Add any user requested libraries
-target_link_libraries(cubic_DC_motor_driver
+target_link_libraries(${PROJECT_NAME}
         hardware_spi hardware_adc hardware_pwm
         )
 
-pico_add_extra_outputs(cubic_DC_motor_driver)
+pico_add_extra_outputs(${PROJECT_NAME})
 
